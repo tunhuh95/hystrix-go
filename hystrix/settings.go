@@ -16,6 +16,8 @@ var (
 	DefaultSleepWindow = 5000
 	// DefaultErrorPercentThreshold causes circuits to open once the rolling measure of errors exceeds this percent of requests
 	DefaultErrorPercentThreshold = 50
+	// DefaultStartupDuration is how long, in seconds, to wait from the time the server start running to start to apply hystrix
+	DefaultStartupDuration = 0
 	// DefaultLogger is the default logger that will be used in the Hystrix package. By default prints nothing.
 	DefaultLogger = NoopLogger{}
 )
@@ -26,6 +28,7 @@ type Settings struct {
 	RequestVolumeThreshold uint64
 	SleepWindow            time.Duration
 	ErrorPercentThreshold  int
+	StartupDuration        int
 }
 
 // CommandConfig is used to tune circuit settings at runtime
@@ -35,16 +38,19 @@ type CommandConfig struct {
 	RequestVolumeThreshold int `json:"request_volume_threshold"`
 	SleepWindow            int `json:"sleep_window"`
 	ErrorPercentThreshold  int `json:"error_percent_threshold"`
+	StartupDuration        int `json:"startup_duration"`
 }
 
 var circuitSettings map[string]*Settings
 var settingsMutex *sync.RWMutex
 var log logger
+var serviceStartTime time.Time
 
 func init() {
 	circuitSettings = make(map[string]*Settings)
 	settingsMutex = &sync.RWMutex{}
 	log = DefaultLogger
+	serviceStartTime = time.Now()
 }
 
 // Configure applies settings for a set of circuits
@@ -84,12 +90,18 @@ func ConfigureCommand(name string, config CommandConfig) {
 		errorPercent = config.ErrorPercentThreshold
 	}
 
+	startupDuration := DefaultStartupDuration
+	if config.StartupDuration != 0 {
+		startupDuration = config.StartupDuration
+	}
+
 	circuitSettings[name] = &Settings{
 		Timeout:                time.Duration(timeout) * time.Millisecond,
 		MaxConcurrentRequests:  max,
 		RequestVolumeThreshold: uint64(volume),
 		SleepWindow:            time.Duration(sleep) * time.Millisecond,
 		ErrorPercentThreshold:  errorPercent,
+		StartupDuration:        startupDuration,
 	}
 }
 

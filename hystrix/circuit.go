@@ -15,6 +15,7 @@ type CircuitBreaker struct {
 	forceOpen              bool
 	mutex                  *sync.RWMutex
 	openedOrLastTestedTime int64
+	serviceStartTime       time.Time
 
 	executorPool *executorPool
 	metrics      *metricExchange
@@ -70,6 +71,7 @@ func newCircuitBreaker(name string) *CircuitBreaker {
 	c.Name = name
 	c.metrics = newMetricExchange(name)
 	c.executorPool = newExecutorPool(name)
+	c.serviceStartTime = serviceStartTime
 	c.mutex = &sync.RWMutex{}
 
 	return c
@@ -111,11 +113,21 @@ func (circuit *CircuitBreaker) IsOpen() bool {
 	return false
 }
 
+func (circuit *CircuitBreaker) IsStartedHystrix() bool {
+	startupDuration := getSettings(circuit.Name).StartupDuration
+	startTime := circuit.serviceStartTime.Add(time.Duration(startupDuration) * time.Second)
+	if startTime.Before(time.Now()) {
+		return false
+	}
+
+	return true
+}
+
 // AllowRequest is checked before a command executes, ensuring that circuit state and metric health allow it.
 // When the circuit is open, this call will occasionally return true to measure whether the external service
 // has recovered.
 func (circuit *CircuitBreaker) AllowRequest() bool {
-	return !circuit.IsOpen() || circuit.allowSingleTest()
+	return !circuit.IsOpen() || circuit.allowSingleTest() || !circuit.IsStartedHystrix()
 }
 
 func (circuit *CircuitBreaker) allowSingleTest() bool {
